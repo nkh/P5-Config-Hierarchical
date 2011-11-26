@@ -1,0 +1,471 @@
+=head1 Config::Hierarchical cookbook
+
+=head2 Simple usage
+
+=head3 Creating a Config::Hierarchical configuration container
+
+	use Config::Hierarchical ;
+	
+	# give the config a name to get user friendly errors
+	
+	my $config = new Config::Hierarchical(NAME => 'Simple usage example config') ;
+
+This will create a container with default values. You can modify the container behavior by passing options
+to the constructor. See the L<Config::Hierarchical> manual for all initialization options.
+
+=head3 Setting and getting configuration variables
+
+	$config->Set(NAME => 'CC', VALUE => 'gcc') ;
+	$config->Set(NAME => 'LD', VALUE => 'ld') ;
+	
+	print "Value for 'CC' is '" . $config->Get(NAME => 'CC') . "'.\n" ;
+	print "'LD' exists.\n" if $config->Exists(NAME => 'LD') ;
+
+Would display:
+
+	Value for 'CC' is 'gcc'.
+	'LD' exists.
+
+=head3 Set the same variable multiple time with different values
+
+	$config->Set(NAME => 'CC', VALUE => 'gcc') ;
+	$config->Set(NAME => 'CC', VALUE => 'cl') ;
+	
+	print "Value for 'CC' is '" . $config->Get(NAME => 'CC') . "'.\n\n" ;
+
+Would display:
+
+	Value for 'CC' is 'cl'.
+
+B<Config::Hierarchical> does not generate any warning when you override a variable's value. If you would like to get an error,
+lock the variable.
+
+=head4 Locking variables
+
+=begin not_tested
+
+	$config->Set(NAME => 'CC', VALUE => 'gcc') ;
+	$config->Lock(NAME => 'CC') ;
+	$config->Set(NAME => 'CC', VALUE => 'cl') ;
+
+=end not_tested
+
+This would generate the following error followed by a stack trace.
+
+	Simple usage example config: Variable 'CURRENT::CC' was locked and couldn't be set at ''t/099_Cookbook.t':89'.
+
+=head4 Setting Locked variables
+
+	$config->Set(FORCE_LOCK => 1, NAME => 'CC', VALUE => 'cl') ;
+	print "Value for 'CC' is '" . $config->Get(NAME => 'CC') . "'.\n\n" ;
+
+Would display:
+
+	Simple usage example config: Forcing locked variable 'CURRENT::CC' at ''t/099_Cookbook.t':0'.
+
+	Value for 'CC' is 'cl'.
+
+=head4 Getting the lock state
+
+	print "'CC' is locked.\n" if $config->IsLocked(NAME => 'CC') ;
+	print "'LD' is locked.\n" if $config->IsLocked(NAME => 'LD') ;
+
+Would display:
+
+	'CC' is locked.
+
+=head2 Setting variable  in the constructor
+
+	use Config::Hierarchical ;
+	
+	my $config = new Config::Hierarchical
+				(
+				NAME => 'Config initialized in constructor',
+				INITIAL_VALUES =>
+					[
+					{NAME => 'CC', VALUE => 1},
+					{NAME => 'CC', VALUE => 2},
+					{NAME => 'LD', VALUE => 3, LOCK => 1},
+					{NAME => 'AS', VALUE => 4, LOCK => 1},
+					],
+				) ;
+
+=head2 Getting a non existing variable value
+
+	my $value = $config->Get(NAME => 'NON_EXISTING') ;
+	print "Value for 'NON_EXISTING' is defined\n" if defined $value ;
+
+Would display:
+
+	Config initialized in constructor: Variable 'NON_EXISTING' doesn't exist in categories [CURRENT]at ''t/099_Cookbook.t':0'. Returning undef!
+
+=head2 Getting multiple variable values
+
+	my @variables = qw(CC LD AS) ;
+	my %values ;
+	
+	@values{@variables} = $config->GetMultiple(@variables) ;
+	
+	use Data::TreeDumper ;
+	
+	my $dump = DumpTree \%values, 'Variables', INDENTATION => "\t", DISPLAY_ADDRESS => 0 ; 
+	print $dump ;
+
+Would display:
+
+	Variables
+	|- AS = 4 
+	|- CC = 2 
+	`- LD = 3 
+
+
+=head2 Variable Attribute
+
+You can attach an attribute to a configuration variable. If the same variable exists in different categories,
+each the variables have a separate attribute. Changing a variable value doesn't change the attribute.
+
+	$config->SetAttribute(NAME => 'CC', VALUE => 'attribute') ;
+	$config->Set(NAME => 'CC', VALUE => 'some_compiler') ;
+	
+	my ($attribute, $attribute_exists) = $config->GetAttribute(NAME => 'CC') ;
+
+You can also  set the attribute and the value at the same time. This also means you can set the attribute 
+in the B<INITIAL_VALUES> section of the configuration constructor.
+
+	$config->Set(NAME => 'CC', VALUE => 'gcc', ATTRIBUTE => 'another_attribute') ;
+
+=head2 history and comments
+
+B<Config::Hierarchical> will keep an history  for each variable in you config.
+
+	print $config->GetHistoryDump(NAME => 'CC') ;
+
+	History for variable 'CC' from config 'Config initialized in constructor' created at ''t/099_Cookbook.t':156':
+	|- 0 
+	|  |- EVENT = CREATE AND SET. value = '1', category = 'CURRENT' at ''t/099_Cookbook.t':156', status = OK. 
+	|  `- TIME = 0 
+	|- 1 
+	|  |- EVENT = SET. value = '2', category = 'CURRENT' at ''t/099_Cookbook.t':156', status = OK. 
+	|  `- TIME = 1 
+	|- 2 
+	|  |- EVENT = SET_ATTRIBUTE. category = 'CURRENT', value = 'attribute' at ''t/099_Cookbook.t':218', status = OK. 
+	|  `- TIME = 4 
+	|- 3 
+	|  |- EVENT = SET. value = 'some_compiler', category = 'CURRENT' at ''t/099_Cookbook.t':219', status = OK. 
+	|  `- TIME = 5 
+	`- 4 
+	   |- EVENT = SET, SET ATTRIBUTE. value = 'gcc', category = 'CURRENT' at ''t/099_Cookbook.t':229', status = OK. 
+	   `- TIME = 6 
+
+The reference manual describes a L<Data::TreeDumper> filter that you can use to generate a history in the
+following format:
+
+	CC
+	|- 0 = CREATE AND SET. value = '1', category = 'CURRENT' at ''t/099_Cookbook.t':156', status = OK. 
+	|- 1 = SET. value = '2', category = 'CURRENT' at ''t/099_Cookbook.t':156', status = OK. 
+	|- 2 = SET_ATTRIBUTE. category = 'CURRENT', value = 'attribute' at ''t/099_Cookbook.t':218', status = OK. 
+	|- 3 = SET. value = 'some_compiler', category = 'CURRENT' at ''t/099_Cookbook.t':219', status = OK. 
+	`- 4 = SET, SET ATTRIBUTE. value = 'gcc', category = 'CURRENT' at ''t/099_Cookbook.t':229', status = OK. 
+
+You can also add a comment to the history when you manipulate variables.
+
+	$config->Set(NAME => 'LD', VALUE => 'new LD value', FORCE_LOCK => 1, COMMENT => 'why we forced the lock') ;
+
+Would give this history:
+
+	History for variable 'LD' from config 'Config initialized in constructor' created at ''t/099_Cookbook.t':156':
+	|- 0 
+	|  |- EVENT = CREATE AND SET. value = '3', LOCK(1), category = 'CURRENT' at ''t/099_Cookbook.t':156', status = OK. 
+	|  `- TIME = 2 
+	`- 1 
+	   |- COMMENT = why we forced the lock 
+	   |- EVENT = SET. value = 'new LD value', FORCE_LOCK, category = 'CURRENT' at ''t/099_Cookbook.t':0', status = OK,
+	   |  forced lock. 
+	   `- TIME = 7 
+
+See I<GetHistory> in the manual if you want to handle the history data directly.
+
+=head2 Validators
+
+You can assign validators to variables. If a validator return B<false>, B<Config::Hierarchical> will generate and error.
+
+Validators can be defined in the B<Config::Hierarchical> constructor or can be local in a I<Set> call.
+
+	sub PositiveValueValidator
+	{
+	my ($value) = @_; 
+	return($value >= 0)
+	} ;
+
+=begin not_tested
+
+	$config->Set
+		(
+		NAME => 'CC',
+		VALUE => -1, 
+		VALIDATORS => {positive_value => \&PositiveValueValidator,},
+		) ;	
+
+=end not_tested
+
+Will generate the following error:
+
+	Config initialized in constructor: Invalid value '-1' for variable 'CC'. Local validator 'positive_value' defined at ''t/099_Cookbook.t':332'.
+
+=head2 GetKeys
+
+You can get a list of all the variable names.
+
+	my @variable_names = $config->GetKeys() ;
+	
+	print 'The config contains the following variables: ' . join(', ', @variable_names) . ".\n" ;
+
+Would display:
+
+	The config contains the following variables: CC, AS, LD.
+
+=head2 Key and value tuples
+
+You can also get a list containing a tuple for each of the config variable. The Tuple is a hash reference. This lets you
+write code like :
+
+=begin not_tested
+
+	map
+		{
+		my $name =  $_->{NAME} ;
+		my $value = $_->{VALUE} ;
+		
+		# your code here
+		
+		} $config->GetKeyValueTuples() ;
+
+=end not_tested
+
+=head2 Categories
+
+=begin not_tested
+
+	my $config = new Config::Hierarchical
+				(
+				NAME => 'config with categories',
+				
+				CATEGORY_NAMES   => ['A', 'B'],
+				DEFAULT_CATEGORY => 'B',
+				
+				INITIAL_VALUES  =>
+					[
+					{CATEGORY => 'A', NAME => 'CC', VALUE => 'A_CC'},
+					{CATEGORY => 'B', NAME => 'CC', VALUE => 'B_CC'},
+					{CATEGORY => 'A', NAME => 'LD', VALUE => 'A_LD'},
+					{CATEGORY => 'B', NAME => 'LD', VALUE => 'B_LD'},
+					{CATEGORY => 'A', NAME => 'AS', VALUE => 'A_AS'},
+					] ,
+				) ;
+
+=end not_tested
+
+Would generate the following warnings:
+
+	config with categories: Setting 'B::CC' at ''t/099_Cookbook.t':431':
+	'A::CC' takes precedence .
+
+	config with categories: Setting 'B::LD' at ''t/099_Cookbook.t':431':
+	'A::LD' takes precedence .
+
+
+And the config would be:
+
+	Config contains:
+	|- AS = A_AS 
+	|- CC = A_CC 
+	`- LD = A_LD 
+
+B<Config::Hierarchical> will display a warning anytime you set a variable and that a higher level configuration takes precedence.
+
+=head3 Lower categories warning
+
+By default, no warning are displayed when a lower category value will be ignored. You can make B<Config::Hierarchical> check
+lower categories this way:
+
+  $config->Set(CATEGORY => 'A', NAME => 'CC', VALUE => 'A_CC_2', CHECK_LOWER_LEVEL_CATEGORIES => 1) ;
+
+Would generate the following warnings:
+
+	config with categories: Setting 'A::CC' at ''t/099_Cookbook.t':0':
+	Takes Precedence over lower category 'B::CC'
+
+
+The config is now:
+
+	Config contains:
+	|- AS = A_AS 
+	|- CC = A_CC_2 
+	`- LD = A_LD 
+
+=head3 Overriding a higher level category
+
+Is done this way:
+
+  $config->Set(CATEGORY => 'B', NAME => 'CC', VALUE => 'B_CC_2', OVERRIDE => 1) ;
+
+And would generate the following warnings:
+
+	config with categories: Setting 'B::CC' at ''t/099_Cookbook.t':0':
+	Overriding 'A::CC'
+
+
+The config is now:
+
+	Config contains:
+	|- AS = A_AS 
+	|- CC = B_CC_2 
+	`- LD = A_LD 
+
+=head3 History from multiple categories
+
+	print $config->GetHistoryDump(NAME => 'CC') ;
+
+	History for variable 'CC' from config 'config with categories' created at ''t/099_Cookbook.t':431':
+	|- 0 
+	|  |- EVENT = CREATE AND SET. value = 'A_CC', category = 'A' at ''t/099_Cookbook.t':431', status = OK. 
+	|  `- TIME = 0 
+	|- 1 
+	|  |- EVENT = CREATE AND SET. value = 'B_CC', category = 'B' at ''t/099_Cookbook.t':431', status = 'A::CC' takes
+	|  |  precedence .OK. 
+	|  `- TIME = 1 
+	|- 2 
+	|  |- EVENT = SET. value = 'A_CC_2', category = 'A' at ''t/099_Cookbook.t':0', status = Takes Precedence over lower
+	|  |  category 'B::CC'OK. 
+	|  `- TIME = 5 
+	`- 3 
+	   |- EVENT = SET. value = 'B_CC_2', OVERRIDE, category = 'B' at ''t/099_Cookbook.t':0', status = Overriding 'A::CC'
+	   |  (existed, value was different).OK. 
+	   `- TIME = 6 
+
+
+=head2 Tie::Readonly
+
+You can tie your configuration to a read only hash. this lets you manipulate your config like a normal hash. Interpolation
+in strings is also much easier.
+
+	my %hash ;
+	tie %hash, 'Config::Hierarchical::Tie::ReadOnly' => $config ;
+	
+	my $keys = join(', ', sort keys %hash) ;
+	
+	print "The config variables are: $keys\n" ;
+	
+	print "CC's value is '$hash{CC}'\n" ;
+
+Would display:
+
+	The config variables are: AS, CC, LD
+	CC's value is 'B_CC_2'
+
+Remember that the hash is read only. Trying to modify a variable is not allowed:
+
+=begin not_tested
+
+	$hash{CC} = 2 ;
+
+=end not_tested
+
+Would generate this error:
+
+	This hash is read only at ''t/099_Cookbook.t':560'!
+
+=head2 Copying data from another config
+
+Use the code below to initialized a category from data copied from another category:
+
+	my $config_2 = new Config::Hierarchical
+					(
+					NAME => 'config initialized from another config',
+					#
+					CATEGORY_NAMES         => ['PARENT', 'CURRENT'],
+					DEFAULT_CATEGORY       => 'CURRENT',
+					#
+					INITIAL_VALUES =>
+						[
+						# Initializing a category from another config
+						map
+							({
+								{
+								NAME     => $_->{NAME},
+								VALUE    => $_->{VALUE}, 
+								CATEGORY => 'PARENT',
+								LOCK     => 1,
+								HISTORY  => $config->GetHistory(NAME => $_->{NAME}),
+								}
+							} $config->GetKeyValueTuples()),
+						#
+						{NAME => 'VALUE_IN_CURRENT_CATEGORY', VALUE => 1},
+						],
+					) ;
+
+And the config would be:
+
+	Config 2 contains:
+	|- AS = A_AS 
+	|- CC = B_CC_2 
+	|- LD = A_LD 
+	`- VALUE_IN_CURRENT_CATEGORY = 1 
+
+
+=head2 Aliasing other configurations
+
+	my $config_3 = new Config::Hierarchical
+					(
+					NAME => 'config with aliases',
+					#
+					CATEGORY_NAMES         => ['PARENT', 'CURRENT'],
+					DEFAULT_CATEGORY       => 'CURRENT',
+					#
+					INITIAL_VALUES =>
+						[
+						{
+						CATEGORY       => 'PARENT',
+						ALIAS_CATEGORY => $config,
+						},
+						# more initialization if necessary
+						],
+					) ;
+
+	$config_3->Set(NAME => 'LD', VALUE => 'new LD') ;
+
+Would generate this warning:
+
+	config with aliases: Setting 'CURRENT::LD' at ''t/099_Cookbook.t':0':
+	'PARENT::LD' takes precedence .
+
+And the config would be:
+
+	Config 3 contains:
+	|- AS = A_AS 
+	|- CC = B_CC_2 
+	`- LD = A_LD 
+
+=head3 History from aliased configuration
+
+B<Config::Hierarchical> will, display aliased categories history.
+
+	print $config_3->GetHistoryDump(NAME => 'LD') ;
+
+	History for variable 'LD' from config 'config with aliases' created at ''t/099_Cookbook.t':631':
+	|- 0 
+	|  |- HISTORY FROM 'PARENT' ALIASED TO 'config with categories' 
+	|  |  |- 0 
+	|  |  |  |- EVENT = CREATE AND SET. value = 'A_LD', category = 'A' at ''t/099_Cookbook.t':431', status = OK. 
+	|  |  |  `- TIME = 2 
+	|  |  `- 1 
+	|  |     |- EVENT = CREATE AND SET. value = 'B_LD', category = 'B' at ''t/099_Cookbook.t':431', status = 'A::LD' takes
+	|  |     |  precedence .OK. 
+	|  |     `- TIME = 3 
+	|  `- TIME = 3 
+	`- 1 
+	   |- EVENT = CREATE AND SET. value = 'new LD', category = 'CURRENT' at ''t/099_Cookbook.t':0', status = 'PARENT::LD'
+	   |  takes precedence .OK. 
+	   `- TIME = 4 
+
+=cut
